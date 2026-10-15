@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+COMPOSE_FILE="D:/Users/Bagus/Documents/hermes-work/prototypes/mydevenv/docker-compose.yml"
+SERVICE="php82"
+HOST_DIR="D:/Users/Bagus/Documents/dev/projects-web"
+WORKDIR="/srv"
+
+CURR="$(pwd -P)"
+if [[ "$CURR" == "$HOST_DIR"* ]]; then
+    REL="${CURR#$HOST_DIR}"
+    WORKDIR="/srv${REL}"
+fi
+
+docker compose -f "$COMPOSE_FILE" exec -w "$WORKDIR" "$SERVICE" composer "$@"

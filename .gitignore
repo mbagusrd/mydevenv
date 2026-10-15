@@ -1,0 +1,17 @@
+# Database persistent storage
+data/
+
+# Web projects
+projects/*
+!projects/demo/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

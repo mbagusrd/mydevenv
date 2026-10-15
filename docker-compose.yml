@@ -1,0 +1,86 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: mydevenv_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./projects:/srv
+      - ./config/nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - php56
+      - php74
+      - php82
+    networks:
+      - mydevenv_net
+
+  php56:
+    image: dockette/php:5.6-fpm
+    container_name: mydevenv_php56
+    restart: unless-stopped
+    volumes:
+      - ./projects:/srv
+    networks:
+      - mydevenv_net
+
+  php74:
+    image: dockette/php:7.4-fpm
+    container_name: mydevenv_php74
+    restart: unless-stopped
+    volumes:
+      - ./projects:/srv
+    networks:
+      - mydevenv_net
+
+  php82:
+    image: dockette/php:8.2-fpm
+    container_name: mydevenv_php82
+    restart: unless-stopped
+    volumes:
+      - ./projects:/srv
+    networks:
+      - mydevenv_net
+
+  mariadb:
+    image: mariadb:10.5
+    container_name: mydevenv_mariadb
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    networks:
+      - mydevenv_net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: mydevenv_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    volumes:
+      - ./data/pgsql:/var/lib/postgresql/data
+    networks:
+      - mydevenv_net
+
+  mongo:
+    image: mongo:6.0
+    container_name: mydevenv_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/mongo:/data/db
+    networks:
+      - mydevenv_net
+
+networks:
+  mydevenv_net:
+    driver: bridge
