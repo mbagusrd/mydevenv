@@ -12,13 +12,15 @@ mydevenv/
 │   ├── run.sh          # CLI runner Linux/Mac
 │   └── sync.py         # Generator vhost + updater hosts OS (interaktif)
 ├── config/
-│   └── nginx/conf.d/   # Auto-generated server blocks Nginx
+│   ├── nginx/conf.d/   # Auto-generated server blocks Nginx
+│   └── php/            # Custom PHP INI configuration (custom.ini)
 ├── data/               # Persistent database storage
 │   ├── mongo/
 │   ├── mysql/
 │   └── pgsql/
-├── projects/           # Folder project PHP Anda
+├── projects/           # Folder project PHP Anda (atau custom via .env)
 │   └── demo/           # Project contoh
+├── .env.example        # Template konfigurasi path project host
 └── docker-compose.yml  # Service definitions
 ```
 

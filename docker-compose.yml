@@ -7,7 +7,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./projects:/srv
+      - ${PROJECTS_DIR:-./projects}:/srv
       - ./config/nginx/conf.d:/etc/nginx/conf.d:ro
     depends_on:
       - php56
@@ -21,7 +21,8 @@ services:
     container_name: mydevenv_php56
     restart: unless-stopped
     volumes:
-      - ./projects:/srv
+      - ${PROJECTS_DIR:-./projects}:/srv
+      - ./config/php/custom.ini:/etc/php/5.6/fpm/conf.d/99-custom.ini:ro
     networks:
       - mydevenv_net
 
@@ -30,7 +31,8 @@ services:
     container_name: mydevenv_php74
     restart: unless-stopped
     volumes:
-      - ./projects:/srv
+      - ${PROJECTS_DIR:-./projects}:/srv
+      - ./config/php/custom.ini:/etc/php/7.4/fpm/conf.d/99-custom.ini:ro
     networks:
       - mydevenv_net
 
@@ -39,7 +41,8 @@ services:
     container_name: mydevenv_php82
     restart: unless-stopped
     volumes:
-      - ./projects:/srv
+      - ${PROJECTS_DIR:-./projects}:/srv
+      - ./config/php/custom.ini:/etc/php/8.2/fpm/conf.d/99-custom.ini:ro
     networks:
       - mydevenv_net
 

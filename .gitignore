@@ -5,11 +5,19 @@ data/
 projects/*
 !projects/demo/
 
+# Config (only include default configs)
+config/nginx/conf.d/*
+!config/nginx/conf.d/00-dashboards.conf
+!config/nginx/conf.d/project-demo.conf
+config/php/*
+!config/php/custom.ini
+
 # Python cache
 __pycache__/
 *.py[cod]
 
 # OS & Editor files
+.env
 .DS_Store
 Thumbs.db
 .idea/

@@ -30,12 +30,15 @@ def check_docker():
         return False
 
 def ensure_directories():
-    for sub in ["projects", "config/nginx/conf.d", "data/mysql", "data/pgsql", "data/mongo"]:
+    for sub in ["projects", "config/nginx/conf.d", "config/php", "data/mysql", "data/pgsql", "data/mongo"]:
         (BASE_DIR / sub).mkdir(parents=True, exist_ok=True)
 
 def scan_projects():
     ensure_directories()
-    return [p.name for p in PROJECTS_DIR.iterdir() if p.is_dir() and not p.name.startswith(".")]
+    p_dir = get_host_mount_dir()
+    if not p_dir.exists():
+        return []
+    return [p.name for p in p_dir.iterdir() if p.is_dir() and not p.name.startswith(".")]
 
 def generate_nginx_configs():
     VHOST_DIR.mkdir(parents=True, exist_ok=True)
@@ -51,13 +54,19 @@ def generate_nginx_configs():
     autoindex on;
 
     location / {{
-        try_files $uri $uri/ =404;
+        try_files $uri $uri/ @subfolder;
     }}
 
-    location ~ \\.php$ {{
+    location @subfolder {{
+        rewrite ^/([^/]+)/?(.*)$ /$1/index.php?$query_string last;
+    }}
+
+    location ~ \\.php(/|$) {{
+        fastcgi_split_path_info ^(.+\\.php)(/.+)$;
         fastcgi_pass {fpm_pass};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
         include fastcgi_params;
     }}
 }}
@@ -66,11 +75,12 @@ def generate_nginx_configs():
 
     # 2. Vhost per project
     projects = scan_projects()
+    projects_dir = get_host_mount_dir()
     for f in VHOST_DIR.glob("project-*.conf"):
         f.unlink(missing_ok=True)
 
     for p in projects:
-        proj_dir = PROJECTS_DIR / p
+        proj_dir = projects_dir / p
         has_public = (proj_dir / "public").is_dir()
         doc_root = f"/srv/{p}/public" if has_public else f"/srv/{p}"
 
@@ -271,6 +281,23 @@ def list_urls():
 ALIASES_DIR = BASE_DIR / "bin" / "aliases"
 
 def get_host_mount_dir():
+    # 1. Cek file .env
+    env_file = BASE_DIR / ".env"
+    if env_file.exists():
+        try:
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("PROJECTS_DIR="):
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    p = Path(val)
+                    if not p.is_absolute():
+                        p = (BASE_DIR / p).resolve()
+                    if p.exists():
+                        return p
+        except Exception:
+            pass
+
+    # 2. Cek compose file
     compose_file = BASE_DIR / "docker-compose.yml"
     if compose_file.exists():
         try:
@@ -278,6 +305,8 @@ def get_host_mount_dir():
             m = re.search(r'-\s+([^:\s]+):/srv', content)
             if m:
                 raw_path = m.group(1).strip()
+                if raw_path.startswith("${") and ":-" in raw_path:
+                    raw_path = raw_path.split(":-", 1)[1].rstrip("}")
                 p = (BASE_DIR / raw_path).resolve()
                 if p.exists():
                     return p
