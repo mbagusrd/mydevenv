@@ -63,6 +63,7 @@ if "%1"=="exec" goto cmd_exec
 if "%1"=="alias" goto cmd_alias
 if "%1"=="php" goto cmd_php
 if "%1"=="composer" goto cmd_composer
+if "%1"=="mysqldump" goto cmd_mysqldump
 
 :: Jika tanpa argumen, tampilkan menu interaktif
 %PY_CMD% bin\sync.py
@@ -118,6 +119,11 @@ goto end
 :cmd_composer
 for /f "tokens=1* delims= " %%a in ("%*") do set "COMPOSER_ARGS=%%b"
 docker compose exec php82 composer %COMPOSER_ARGS%
+goto end
+
+:cmd_mysqldump
+for /f "tokens=1* delims= " %%a in ("%*") do set "MYSQLDUMP_ARGS=%%b"
+docker compose exec mariadb mysqldump %MYSQLDUMP_ARGS%
 goto end
 
 :end
