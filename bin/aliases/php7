@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-COMPOSE_FILE="D:/Users/Bagus/Documents/hermes-work/prototypes/mydevenv/docker-compose.yml"
+COMPOSE_FILE="D:/Users/Bagus/Documents/dev/mydevenv/docker-compose.yml"
 SERVICE="php74"
 HOST_DIR="D:/Users/Bagus/Documents/dev/projects-web"
 WORKDIR="/srv"
 
 CURR="$(pwd -P)"
+WIN_CURR="$(pwd -W 2>/dev/null || cygpath -w "$CURR" 2>/dev/null || echo "$CURR")"
+WIN_CURR="${WIN_CURR//\\//}"
 if [[ "$CURR" == "$HOST_DIR"* ]]; then
     REL="${CURR#$HOST_DIR}"
+    WORKDIR="/srv${REL}"
+elif [[ "$WIN_CURR" == "$HOST_DIR"* ]]; then
+    REL="${WIN_CURR#$HOST_DIR}"
     WORKDIR="/srv${REL}"
 fi
 

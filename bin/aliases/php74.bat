@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set "COMPOSE_FILE=D:\Users\Bagus\Documents\hermes-work\prototypes\mydevenv\docker-compose.yml"
+set "COMPOSE_FILE=D:\Users\Bagus\Documents\dev\mydevenv\docker-compose.yml"
 set "SERVICE=php74"
 set "HOST_DIR=D:\Users\Bagus\Documents\dev\projects-web"
 set "WORKDIR=/srv"
