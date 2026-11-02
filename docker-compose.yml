@@ -13,6 +13,8 @@ services:
       - php56
       - php74
       - php82
+      - php83
+      - php84
     networks:
       - mydevenv_net
 
@@ -37,12 +39,47 @@ services:
       - mydevenv_net
 
   php82:
-    image: dockette/php:8.2-fpm
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        PHP_VER: "8.2"
+    image: mydevenv-php:8.2
     container_name: mydevenv_php82
     restart: unless-stopped
     volumes:
       - ${PROJECTS_DIR:-./projects}:/srv
-      - ./config/php/custom.ini:/etc/php/8.2/fpm/conf.d/99-custom.ini:ro
+      - ./config/php/custom.ini:/usr/local/etc/php/conf.d/99-custom.ini:ro
+    networks:
+      - mydevenv_net
+
+  php83:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        PHP_VER: "8.3"
+    image: mydevenv-php:8.3
+    container_name: mydevenv_php83
+    restart: unless-stopped
+    volumes:
+      - ${PROJECTS_DIR:-./projects}:/srv
+      - ./config/php/custom.ini:/usr/local/etc/php/conf.d/99-custom.ini:ro
+    networks:
+      - mydevenv_net
+
+  php84:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        PHP_VER: "8.4"
+    image: mydevenv-php:8.4
+    container_name: mydevenv_php84
+    restart: unless-stopped
+    volumes:
+      - ${PROJECTS_DIR:-./projects}:/srv
+      - ./config/php/custom.ini:/usr/local/etc/php/conf.d/99-custom.ini:ro
     networks:
       - mydevenv_net
 

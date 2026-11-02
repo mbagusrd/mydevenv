@@ -60,9 +60,12 @@ if "%1"=="repair" goto cmd_repair
 if "%1"=="uninstall" goto cmd_uninstall
 if "%1"=="ps" goto cmd_ps
 if "%1"=="exec" goto cmd_exec
+if "%1"=="switch" goto cmd_switch
+if "%1"=="use" goto cmd_switch
 if "%1"=="alias" goto cmd_alias
 if "%1"=="php" goto cmd_php
 if "%1"=="composer" goto cmd_composer
+if "%1"=="mysql" goto cmd_mysql
 if "%1"=="mysqldump" goto cmd_mysqldump
 
 :: Jika tanpa argumen, tampilkan menu interaktif
@@ -107,18 +110,59 @@ for /f "tokens=1* delims= " %%a in ("%*") do set "EXEC_ARGS=%%b"
 docker compose exec %EXEC_ARGS%
 goto end
 
+:cmd_switch
+%PY_CMD% bin\sync.py --switch %2
+goto end
+
 :cmd_alias
 %PY_CMD% bin\sync.py --alias
 goto end
 
 :cmd_php
+set "PHP_CMD_TARGET=php82"
+if exist "config\settings.json" (
+    for /f "tokens=2 delims=:," %%v in ('findstr /i "default_php" config\settings.json') do (
+        set "VAL_RAW=%%v"
+        set "VAL_RAW=!VAL_RAW: =!"
+        set "VAL_RAW=!VAL_RAW:"=!"
+        if "!VAL_RAW!"=="5.6" set "PHP_CMD_TARGET=php56"
+        if "!VAL_RAW!"=="5" set "PHP_CMD_TARGET=php56"
+        if "!VAL_RAW!"=="7.4" set "PHP_CMD_TARGET=php74"
+        if "!VAL_RAW!"=="7" set "PHP_CMD_TARGET=php74"
+        if "!VAL_RAW!"=="8.2" set "PHP_CMD_TARGET=php82"
+        if "!VAL_RAW!"=="8" set "PHP_CMD_TARGET=php82"
+        if "!VAL_RAW!"=="8.3" set "PHP_CMD_TARGET=php83"
+        if "!VAL_RAW!"=="8.4" set "PHP_CMD_TARGET=php84"
+    )
+)
 for /f "tokens=1* delims= " %%a in ("%*") do set "PHP_ARGS=%%b"
-docker compose exec php82 php %PHP_ARGS%
+docker compose exec %PHP_CMD_TARGET% php %PHP_ARGS%
 goto end
 
 :cmd_composer
+set "PHP_CMD_TARGET=php82"
+if exist "config\settings.json" (
+    for /f "tokens=2 delims=:," %%v in ('findstr /i "default_php" config\settings.json') do (
+        set "VAL_RAW=%%v"
+        set "VAL_RAW=!VAL_RAW: =!"
+        set "VAL_RAW=!VAL_RAW:"=!"
+        if "!VAL_RAW!"=="5.6" set "PHP_CMD_TARGET=php56"
+        if "!VAL_RAW!"=="5" set "PHP_CMD_TARGET=php56"
+        if "!VAL_RAW!"=="7.4" set "PHP_CMD_TARGET=php74"
+        if "!VAL_RAW!"=="7" set "PHP_CMD_TARGET=php74"
+        if "!VAL_RAW!"=="8.2" set "PHP_CMD_TARGET=php82"
+        if "!VAL_RAW!"=="8" set "PHP_CMD_TARGET=php82"
+        if "!VAL_RAW!"=="8.3" set "PHP_CMD_TARGET=php83"
+        if "!VAL_RAW!"=="8.4" set "PHP_CMD_TARGET=php84"
+    )
+)
 for /f "tokens=1* delims= " %%a in ("%*") do set "COMPOSER_ARGS=%%b"
-docker compose exec php82 composer %COMPOSER_ARGS%
+docker compose exec %PHP_CMD_TARGET% composer %COMPOSER_ARGS%
+goto end
+
+:cmd_mysql
+for /f "tokens=1* delims= " %%a in ("%*") do set "MYSQL_ARGS=%%b"
+docker compose exec mariadb mysql %MYSQL_ARGS%
 goto end
 
 :cmd_mysqldump

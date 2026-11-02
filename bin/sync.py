@@ -12,10 +12,61 @@ VHOST_DIR = BASE_DIR / "config" / "nginx" / "conf.d"
 DATA_DIR = BASE_DIR / "data"
 
 PHP_STACKS = {
-    "5": ("php5.test", "php56:9000"),
-    "7": ("php7.test", "php74:9000"),
-    "8": ("php8.test", "php82:9000"),
+    "5.6": ("php56.test", "php56:9000", "php56"),
+    "7.4": ("php74.test", "php74:9000", "php74"),
+    "8.2": ("php82.test", "php82:9000", "php82"),
+    "8.3": ("php83.test", "php83:9000", "php83"),
+    "8.4": ("php84.test", "php84:9000", "php84"),
 }
+CONFIG_FILE = BASE_DIR / "config" / "settings.json"
+DEFAULT_PHP_VER = "8.2"
+
+def normalize_php_version(ver):
+    ver = str(ver).strip()
+    mapping = {
+        "5": "5.6",
+        "56": "5.6",
+        "5.6": "5.6",
+        "7": "7.4",
+        "74": "7.4",
+        "7.4": "7.4",
+        "8": "8.2",
+        "82": "8.2",
+        "8.2": "8.2",
+        "83": "8.3",
+        "8.3": "8.3",
+        "84": "8.4",
+        "8.4": "8.4",
+    }
+    return mapping.get(ver)
+
+def get_current_php_version():
+    if CONFIG_FILE.exists():
+        try:
+            import json
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            ver = normalize_php_version(data.get("default_php", DEFAULT_PHP_VER))
+            if ver in PHP_STACKS:
+                return ver
+        except Exception:
+            pass
+    return DEFAULT_PHP_VER
+
+def set_current_php_version(ver):
+    norm = normalize_php_version(ver)
+    if not norm or norm not in PHP_STACKS:
+        return False
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    import json
+    data = {}
+    if CONFIG_FILE.exists():
+        try:
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+    data["default_php"] = norm
+    CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return True
 
 def get_hosts_path():
     if platform.system() == "Windows":
@@ -42,10 +93,38 @@ def scan_projects():
 
 def generate_nginx_configs():
     VHOST_DIR.mkdir(parents=True, exist_ok=True)
+    curr_ver = get_current_php_version()
+    _, default_fpm, _ = PHP_STACKS[curr_ver]
 
     # 1. Base dashboards for root domains (support both dir listing and php script execution)
     dash_conf = "# Dashboards for root domains\n"
-    for ver, (domain, fpm_pass) in PHP_STACKS.items():
+    # Default php.test and localhost fallback
+    dash_conf += f"""server {{
+    listen 80;
+    server_name php.test;
+    root /srv;
+    index index.php index.html;
+    autoindex on;
+
+    location / {{
+        try_files $uri $uri/ @subfolder;
+    }}
+
+    location @subfolder {{
+        rewrite ^/([^/]+)/?(.*)$ /$1/index.php?$query_string last;
+    }}
+
+    location ~ \\.php(/|$) {{
+        fastcgi_split_path_info ^(.+\\.php)(/.+)$;
+        fastcgi_pass {default_fpm};
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+        include fastcgi_params;
+    }}
+}}
+"""
+    for ver, (domain, fpm_pass, _) in PHP_STACKS.items():
         dash_conf += f"""server {{
     listen 80;
     server_name {domain};
@@ -85,7 +164,26 @@ def generate_nginx_configs():
         doc_root = f"/srv/{p}/public" if has_public else f"/srv/{p}"
 
         conf = f"# Config for project: {p}\n"
-        for ver, (base_domain, fpm_pass) in PHP_STACKS.items():
+        # Default alias <project>.test pointing to active default PHP-FPM
+        conf += f"""server {{
+    listen 80;
+    server_name {p}.test;
+    root {doc_root};
+    index index.php index.html;
+
+    location / {{
+        try_files $uri $uri/ /index.php?$query_string;
+    }}
+
+    location ~ \\.php$ {{
+        fastcgi_pass {default_fpm};
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }}
+}}
+"""
+        for ver, (base_domain, fpm_pass, _) in PHP_STACKS.items():
             domain = f"{p}.{base_domain}"
             conf += f"""server {{
     listen 80;
@@ -113,11 +211,13 @@ def sync_hosts_file():
     hosts_path = get_hosts_path()
     projects = scan_projects()
 
-    domains = []
-    for _, (domain, _) in PHP_STACKS.items():
+    domains = ["php.test"]
+    for _, (domain, _, _) in PHP_STACKS.items():
         domains.append(domain)
         for p in projects:
             domains.append(f"{p}.{domain}")
+    for p in projects:
+        domains.append(f"{p}.test")
 
     try:
         current_hosts = hosts_path.read_text(encoding="utf-8", errors="ignore")
@@ -157,7 +257,7 @@ def clean_hosts_file():
 
     lines = content.splitlines()
     cleaned = []
-    stack_domains = ["php5.test", "php7.test", "php8.test"]
+    stack_domains = ["php.test", "php5.test", "php7.test", "php8.test", "php56.test", "php74.test", "php82.test", "php83.test", "php84.test"]
 
     for line in lines:
         if "# Flyenv Portable Stack" in line or "# MyDevEnv Portable Stack" in line:
@@ -197,8 +297,9 @@ def action_setup():
         (BASE_DIR / sub).mkdir(parents=True, exist_ok=True)
     print("[OK] Struktur direktori siap.")
 
-    print("[INFO] Mengunduh Docker images (compose pull)...")
-    subprocess.run(["docker", "compose", "pull"], cwd=BASE_DIR)
+    print("[INFO] Mengunduh dan build Docker images (compose pull + build)...")
+    subprocess.run(["docker", "compose", "pull", "--ignore-buildable"], cwd=BASE_DIR)
+    subprocess.run(["docker", "compose", "build"], cwd=BASE_DIR)
 
     generate_nginx_configs()
     sync_hosts_file()
@@ -263,9 +364,12 @@ def action_uninstall():
 
 def list_urls():
     projects = scan_projects()
-    print("\n--- Dashboard Utama ---")
-    for ver, (dom, _) in PHP_STACKS.items():
-        print(f"PHP {ver} Index : http://{dom}")
+    curr_ver = get_current_php_version()
+    print(f"\n--- Versi PHP Default Aktif: PHP {curr_ver} ({PHP_STACKS[curr_ver][2]}) ---")
+    print("--- Dashboard Utama ---")
+    print(f"Default (PHP {curr_ver}) : http://php.test")
+    for ver, (dom, _, _) in PHP_STACKS.items():
+        print(f"PHP {ver} Index       : http://{dom}")
 
     print("\n--- Project Subdomains ---")
     if not projects:
@@ -274,8 +378,9 @@ def list_urls():
 
     for p in projects:
         print(f"[{p}]")
-        for ver, (dom, _) in PHP_STACKS.items():
-            print(f"  PHP {ver} : http://{p}.{dom}")
+        print(f"  Default (PHP {curr_ver}) : http://{p}.test")
+        for ver, (dom, _, _) in PHP_STACKS.items():
+            print(f"  PHP {ver}             : http://{p}.{dom}")
         print()
 
 ALIASES_DIR = BASE_DIR / "bin" / "aliases"
@@ -320,17 +425,23 @@ def generate_alias_scripts():
     host_mount_str = str(host_mount)
     host_len = len(host_mount_str)
     compose_file = str(BASE_DIR / "docker-compose.yml")
+    curr_ver = get_current_php_version()
+    default_service = PHP_STACKS[curr_ver][2]
 
     cmds = [
-        ("php", "php82", "php"),
+        ("php", default_service, "php"),
+        ("php84", "php84", "php"),
+        ("php83", "php83", "php"),
         ("php82", "php82", "php"),
-        ("php8", "php82", "php"),
+        ("php8", default_service if curr_ver.startswith("8.") else "php82", "php"),
         ("php74", "php74", "php"),
         ("php7", "php74", "php"),
         ("php56", "php56", "php"),
         ("php5", "php56", "php"),
-        ("composer", "php82", "composer"),
-        ("artisan", "php82", "php artisan"),
+        ("composer", default_service, "composer"),
+        ("artisan", default_service, "php artisan"),
+        ("mysql", "mariadb", "mysql"),
+        ("mysqldump", "mariadb", "mysqldump"),
     ]
 
     for name, service, exe in cmds:
@@ -361,8 +472,13 @@ def generate_alias_scripts():
             f'HOST_DIR="{host_mount.as_posix()}"\n'
             'WORKDIR="/srv"\n\n'
             'CURR="$(pwd -P)"\n'
+            'WIN_CURR="$(pwd -W 2>/dev/null || cygpath -w "$CURR" 2>/dev/null || echo "$CURR")"\n'
+            'WIN_CURR="${WIN_CURR//\\\\//}"\n'
             'if [[ "$CURR" == "$HOST_DIR"* ]]; then\n'
             '    REL="${CURR#$HOST_DIR}"\n'
+            '    WORKDIR="/srv${REL}"\n'
+            'elif [[ "$WIN_CURR" == "$HOST_DIR"* ]]; then\n'
+            '    REL="${WIN_CURR#$HOST_DIR}"\n'
             '    WORKDIR="/srv${REL}"\n'
             "fi\n\n"
             f'docker compose -f "$COMPOSE_FILE" exec -w "$WORKDIR" "$SERVICE" {exe} "$@"\n'
@@ -375,7 +491,7 @@ def generate_alias_scripts():
             pass
 
     print(f"\n[OK] Script wrapper alias berhasil dibuat di: {ALIASES_DIR}")
-    print("     Perintah: php, php82, php74, php56, composer, artisan")
+    print("     Perintah: php, php82, php74, php56, composer, artisan, mysql, mysqldump")
     return True
 
 def install_to_user_path():
@@ -435,13 +551,21 @@ def install_doskey_autorun():
     generate_alias_scripts()
     doskey_file = ALIASES_DIR / "doskey_aliases.cmd"
     compose_file = str(BASE_DIR / "docker-compose.yml")
+    curr_ver = get_current_php_version()
+    default_service = PHP_STACKS[curr_ver][2]
+
     content = f"""@echo off
-doskey php=docker compose -f "{compose_file}" exec php82 php $*
+doskey php=docker compose -f "{compose_file}" exec {default_service} php $*
+doskey php84=docker compose -f "{compose_file}" exec php84 php $*
+doskey php83=docker compose -f "{compose_file}" exec php83 php $*
 doskey php82=docker compose -f "{compose_file}" exec php82 php $*
+doskey php8=docker compose -f "{compose_file}" exec {default_service if curr_ver.startswith("8.") else "php82"} php $*
 doskey php74=docker compose -f "{compose_file}" exec php74 php $*
+doskey php7=docker compose -f "{compose_file}" exec php74 php $*
 doskey php56=docker compose -f "{compose_file}" exec php56 php $*
-doskey composer=docker compose -f "{compose_file}" exec php82 composer $*
-doskey artisan=docker compose -f "{compose_file}" exec php82 php artisan $*
+doskey php5=docker compose -f "{compose_file}" exec php56 php $*
+doskey composer=docker compose -f "{compose_file}" exec {default_service} composer $*
+doskey artisan=docker compose -f "{compose_file}" exec {default_service} php artisan $*
 """
     doskey_file.write_text(content, encoding="utf-8")
     print(f"[OK] File doskey dibuat: {doskey_file}")
@@ -478,12 +602,14 @@ def action_alias():
         print("      SETUP COMMAND ALIAS PHP (DOCKER)    ")
         print("==========================================")
         print("Perintah alias yang disediakan:")
-        print("  - php      : PHP 8.2 (default)")
-        print("  - php82/8  : PHP 8.2")
-        print("  - php74/7  : PHP 7.4")
-        print("  - php56/5  : PHP 5.6")
-        print("  - composer : Composer CLI (PHP 8.2)")
-        print("  - artisan  : PHP Artisan CLI")
+        print("  - php            : PHP 8.2 (default)")
+        print("  - php82/8        : PHP 8.2")
+        print("  - php74/7        : PHP 7.4")
+        print("  - php56/5        : PHP 5.6")
+        print("  - composer       : Composer CLI (PHP 8.2)")
+        print("  - artisan        : PHP Artisan CLI")
+        print("  - mysql          : MySQL CLI (MariaDB)")
+        print("  - mysqldump      : MySQL Dump CLI (MariaDB)")
         print("------------------------------------------")
         print("1. Pasang Alias ke User PATH Windows (Rekomendasi - CMD/PowerShell/Git Bash)")
         print("2. Generate File Script Alias Saja (bin/aliases)")
@@ -509,23 +635,72 @@ def action_alias():
         else:
             print("Pilihan tidak valid.")
 
+def action_switch_php(target_ver=None):
+    if not target_ver:
+        curr_ver = get_current_php_version()
+        print("\n==========================================")
+        print("       SWITCH DEFAULT VERSI PHP           ")
+        print("==========================================")
+        print(f"Versi saat ini: PHP {curr_ver} ({PHP_STACKS[curr_ver][2]})")
+        print("Dampak switch:")
+        print("  - CLI: perintah `php`, `composer`, `artisan` mengarah ke versi ini")
+        print("  - FPM: domain `php.test` dan `<project>.test` mengarah ke versi ini")
+        print("------------------------------------------")
+        print("1. PHP 5.6 (php56)")
+        print("2. PHP 7.4 (php74)")
+        print("3. PHP 8.2 (php82 - official alpine)")
+        print("4. PHP 8.3 (php83 - official alpine)")
+        print("5. PHP 8.4 (php84 - official alpine)")
+        print("0. Batal / Kembali")
+        print("------------------------------------------")
+        choice = input("Pilih versi target [0-5]: ").strip()
+        mapping = {"1": "5.6", "2": "7.4", "3": "8.2", "4": "8.3", "5": "8.4"}
+        if choice in mapping:
+            target_ver = mapping[choice]
+        elif choice == "0":
+            return
+        else:
+            print("Pilihan tidak valid.")
+            return
+
+    norm_ver = normalize_php_version(target_ver)
+    if not norm_ver or norm_ver not in PHP_STACKS:
+        print(f"[ERROR] Versi PHP '{target_ver}' tidak dikenal. Pilihan: 5.6, 7.4, 8.2, 8.3, 8.4")
+        return
+
+    set_current_php_version(norm_ver)
+    svc = PHP_STACKS[norm_ver][2]
+    print(f"\n[INFO] Versi PHP default dialihkan ke PHP {norm_ver} ({svc}).")
+
+    # Update alias scripts
+    generate_alias_scripts()
+
+    # Update nginx configs & reload
+    generate_nginx_configs()
+    sync_hosts_file()
+    reload_nginx()
+
+    print(f"[OK] Default PHP CLI dan FPM sekarang aktif di PHP {norm_ver} ({svc})!")
+
 def show_menu():
     while True:
+        curr_ver = get_current_php_version()
         print("\n==========================================")
-        print("     MYDEVENV PORTABLE STACK CONTROL      ")
+        print(f"  MYDEVENV STACK CONTROL [PHP: {curr_ver}]")
         print("==========================================")
         print("1. Setup Baru (Inisialisasi + Pull + Sync)")
         print("2. Start Stack (up)")
         print("3. Stop Stack (down)")
         print("4. Restart Stack")
         print("5. Sync Domain & Hosts (Project baru)")
-        print("6. Repair Stack (Rebuild config + Restart)")
-        print("7. Status Container (ps)")
-        print("8. Uninstall Stack")
+        print("6. Switch Versi PHP (CLI & FPM Default)")
+        print("7. Repair Stack (Rebuild config + Restart)")
+        print("8. Status Container (ps)")
         print("9. Setup Command Alias PHP (Docker CLI)")
+        print("10. Uninstall Stack")
         print("0. Keluar")
         print("------------------------------------------")
-        choice = input("Pilih menu [0-9]: ").strip()
+        choice = input("Pilih menu [0-10]: ").strip()
 
         if choice == "1":
             action_setup()
@@ -545,13 +720,15 @@ def show_menu():
             reload_nginx()
             list_urls()
         elif choice == "6":
-            action_repair()
+            action_switch_php()
         elif choice == "7":
-            subprocess.run(["docker", "compose", "ps"], cwd=BASE_DIR)
+            action_repair()
         elif choice == "8":
-            action_uninstall()
+            subprocess.run(["docker", "compose", "ps"], cwd=BASE_DIR)
         elif choice == "9":
             action_alias()
+        elif choice == "10":
+            action_uninstall()
         elif choice == "0":
             sys.exit(0)
         else:
@@ -572,6 +749,9 @@ if __name__ == "__main__":
             reload_nginx()
         elif arg in ["--alias", "alias"]:
             action_alias()
+        elif arg in ["--switch", "switch", "use"]:
+            target = sys.argv[2] if len(sys.argv) > 2 else None
+            action_switch_php(target)
         else:
             show_menu()
     else:
