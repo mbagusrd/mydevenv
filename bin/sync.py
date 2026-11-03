@@ -40,33 +40,52 @@ def normalize_php_version(ver):
     }
     return mapping.get(ver)
 
-def get_current_php_version():
+def get_settings():
     if CONFIG_FILE.exists():
         try:
             import json
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-            ver = normalize_php_version(data.get("default_php", DEFAULT_PHP_VER))
-            if ver in PHP_STACKS:
-                return ver
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except Exception:
             pass
+    return {}
+
+def save_settings(data):
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    import json
+    CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+def get_current_php_version():
+    data = get_settings()
+    ver = normalize_php_version(data.get("default_php", DEFAULT_PHP_VER))
+    if ver in PHP_STACKS:
+        return ver
     return DEFAULT_PHP_VER
 
 def set_current_php_version(ver):
     norm = normalize_php_version(ver)
     if not norm or norm not in PHP_STACKS:
         return False
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    import json
-    data = {}
-    if CONFIG_FILE.exists():
-        try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
+    data = get_settings()
     data["default_php"] = norm
-    CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    save_settings(data)
     return True
+
+def get_enabled_projects():
+    data = get_settings()
+    enabled = data.get("enabled_projects", [])
+    if isinstance(enabled, list):
+        return set(enabled)
+    return set()
+
+def set_project_enabled(project_name, enabled=True):
+    data = get_settings()
+    current = set(data.get("enabled_projects", []))
+    if enabled:
+        current.add(project_name)
+    else:
+        current.discard(project_name)
+    data["enabled_projects"] = sorted(list(current))
+    save_settings(data)
 
 def get_hosts_path():
     if platform.system() == "Windows":
@@ -152,13 +171,15 @@ def generate_nginx_configs():
 """
     (VHOST_DIR / "00-dashboards.conf").write_text(dash_conf, encoding="utf-8")
 
-    # 2. Vhost per project
-    projects = scan_projects()
+    # 2. Vhost per enabled project
+    all_projects = scan_projects()
+    enabled_set = get_enabled_projects()
+    active_projects = [p for p in all_projects if p in enabled_set]
     projects_dir = get_host_mount_dir()
     for f in VHOST_DIR.glob("project-*.conf"):
         f.unlink(missing_ok=True)
 
-    for p in projects:
+    for p in active_projects:
         proj_dir = projects_dir / p
         has_public = (proj_dir / "public").is_dir()
         doc_root = f"/srv/{p}/public" if has_public else f"/srv/{p}"
@@ -205,19 +226,24 @@ def generate_nginx_configs():
 """
         (VHOST_DIR / f"project-{p}.conf").write_text(conf, encoding="utf-8")
 
-    print(f"[OK] Nginx configs generated ({len(projects)} project).")
+    print(f"[OK] Nginx configs generated ({len(active_projects)}/{len(all_projects)} project aktif).")
 
 def sync_hosts_file():
     hosts_path = get_hosts_path()
-    projects = scan_projects()
+    all_projects = scan_projects()
+    enabled_set = get_enabled_projects()
+    active_projects = [p for p in all_projects if p in enabled_set]
 
-    domains = ["php.test"]
+    # Target domains that SHOULD be in hosts
+    target_domains = ["php.test"]
     for _, (domain, _, _) in PHP_STACKS.items():
-        domains.append(domain)
-        for p in projects:
-            domains.append(f"{p}.{domain}")
-    for p in projects:
-        domains.append(f"{p}.test")
+        target_domains.append(domain)
+    for p in active_projects:
+        target_domains.append(f"{p}.test")
+        for _, (domain, _, _) in PHP_STACKS.items():
+            target_domains.append(f"{p}.{domain}")
+
+    target_set = set(target_domains)
 
     try:
         current_hosts = hosts_path.read_text(encoding="utf-8", errors="ignore")
@@ -225,23 +251,49 @@ def sync_hosts_file():
         print(f"[ERROR] Gagal baca {hosts_path}: {e}")
         return False
 
+    # Check if hosts needs cleaning of disabled project domains
+    lines = current_hosts.splitlines()
+    cleaned_lines = []
+    stack_base_domains = [dom for _, (dom, _, _) in PHP_STACKS.items()] + ["test"]
+    needs_rewrite = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            cleaned_lines.append(line)
+            continue
+        parts = stripped.split()
+        if len(parts) >= 2 and parts[0] in ["127.0.0.1", "::1"]:
+            host_name = parts[1].lower()
+            # If domain ends with .test or any PHP stack domain
+            is_stack_domain = host_name == "php.test" or any(host_name.endswith(f".{d}") or host_name == d for d in stack_base_domains) or host_name.endswith(".test")
+            if is_stack_domain and host_name not in target_set:
+                needs_rewrite = True
+                continue
+        cleaned_lines.append(line)
+
     entries_to_add = []
-    for d in domains:
+    current_hosts_check = "\n".join(cleaned_lines) if needs_rewrite else current_hosts
+    for d in target_domains:
         line = f"127.0.0.1 {d}"
-        if line not in current_hosts:
+        if line not in current_hosts_check:
             entries_to_add.append(line)
 
-    if entries_to_add:
+    if needs_rewrite or entries_to_add:
+        if entries_to_add:
+            cleaned_lines.append("\n# MyDevEnv Portable Stack")
+            cleaned_lines.extend(entries_to_add)
+        new_content = "\n".join(cleaned_lines).rstrip() + "\n"
         try:
-            with open(hosts_path, "a", encoding="utf-8") as f:
-                f.write("\n# MyDevEnv Portable Stack\n" + "\n".join(entries_to_add) + "\n")
-            print(f"[OK] {len(entries_to_add)} domain ditambahkan ke {hosts_path}")
+            hosts_path.write_text(new_content, encoding="utf-8")
+            print(f"[OK] File hosts diperbarui ({len(active_projects)} project aktif).")
         except PermissionError:
             print(f"[WARN] Izin ditolak tulis ke {hosts_path}.")
             print("Jalankan terminal sebagai Administrator (Windows) atau gunakan sudo (Linux/Mac).")
-            print("Domain manual yang perlu ditambahkan:")
-            for item in entries_to_add:
-                print(f"  {item}")
+            if entries_to_add:
+                print("Domain manual yang perlu ditambahkan:")
+                for item in entries_to_add:
+                    print(f"  {item}")
             return False
     else:
         print("[OK] File hosts sudah sinkron.")
@@ -363,7 +415,8 @@ def action_uninstall():
     print("\n[SELESAI] MyDevEnv stack berhasil di-uninstall.")
 
 def list_urls():
-    projects = scan_projects()
+    all_projects = scan_projects()
+    enabled_set = get_enabled_projects()
     curr_ver = get_current_php_version()
     print(f"\n--- Versi PHP Default Aktif: PHP {curr_ver} ({PHP_STACKS[curr_ver][2]}) ---")
     print("--- Dashboard Utama ---")
@@ -372,11 +425,12 @@ def list_urls():
         print(f"PHP {ver} Index       : http://{dom}")
 
     print("\n--- Project Subdomains ---")
-    if not projects:
-        print("(Belum ada subfolder di projects/)")
+    active_projects = [p for p in all_projects if p in enabled_set]
+    if not active_projects:
+        print("(Tidak ada project aktif. Aktifkan lewat menu 'Manage Project Domain')")
         return
 
-    for p in projects:
+    for p in active_projects:
         print(f"[{p}]")
         print(f"  Default (PHP {curr_ver}) : http://{p}.test")
         for ver, (dom, _, _) in PHP_STACKS.items():
@@ -682,25 +736,85 @@ def action_switch_php(target_ver=None):
 
     print(f"[OK] Default PHP CLI dan FPM sekarang aktif di PHP {norm_ver} ({svc})!")
 
+def action_manage_projects():
+    while True:
+        all_projects = scan_projects()
+        enabled_set = get_enabled_projects()
+        print("\n==========================================")
+        print("         MANAGE PROJECT DOMAIN (.test)    ")
+        print("==========================================")
+        if not all_projects:
+            print("(Tidak ada project ditemukan di folder projects/)")
+            print("------------------------------------------")
+            print("0. Kembali")
+            input("Tekan Enter untuk kembali...")
+            return
+
+        print("Pilih nomor project untuk toggle AKTIF / NONAKTIF:")
+        for idx, p in enumerate(all_projects, 1):
+            status = "[AKTIF]    " if p in enabled_set else "[NONAKTIF] "
+            print(f" {idx:2d}. {status} {p}")
+        print("------------------------------------------")
+        print(" A. Aktifkan SEMUA project")
+        print(" D. Nonaktifkan SEMUA project")
+        print(" 0. Simpan & Kembali")
+        print("------------------------------------------")
+        choice = input("Pilih menu/nomor project: ").strip()
+
+        if choice == "0":
+            break
+        elif choice.lower() == "a":
+            for p in all_projects:
+                set_project_enabled(p, True)
+            generate_nginx_configs()
+            sync_hosts_file()
+            reload_nginx()
+            print("[OK] Semua project diaktifkan.")
+        elif choice.lower() == "d":
+            for p in all_projects:
+                set_project_enabled(p, False)
+            generate_nginx_configs()
+            sync_hosts_file()
+            reload_nginx()
+            print("[OK] Semua project dinonaktifkan.")
+        elif choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(all_projects):
+                target_p = all_projects[idx - 1]
+                new_state = target_p not in enabled_set
+                set_project_enabled(target_p, new_state)
+                generate_nginx_configs()
+                sync_hosts_file()
+                reload_nginx()
+                state_str = "diaktifkan" if new_state else "dinonaktifkan"
+                print(f"[OK] Project '{target_p}' berhasil {state_str}.")
+            else:
+                print("Nomor project tidak valid.")
+        else:
+            print("Pilihan tidak valid.")
+
 def show_menu():
     while True:
         curr_ver = get_current_php_version()
+        enabled_count = len([p for p in scan_projects() if p in get_enabled_projects()])
         print("\n==========================================")
         print(f"  MYDEVENV STACK CONTROL [PHP: {curr_ver}]")
+        print(f"  Project Domain Aktif: {enabled_count} project")
         print("==========================================")
         print("1. Setup Baru (Inisialisasi + Pull + Sync)")
         print("2. Start Stack (up)")
         print("3. Stop Stack (down)")
         print("4. Restart Stack")
-        print("5. Sync Domain & Hosts (Project baru)")
+        print("5. Sync Domain & Hosts")
         print("6. Switch Versi PHP (CLI & FPM Default)")
-        print("7. Repair Stack (Rebuild config + Restart)")
-        print("8. Status Container (ps)")
-        print("9. Setup Command Alias PHP (Docker CLI)")
-        print("10. Uninstall Stack")
+        print("7. Manage Project Domain (Aktifkan / Matikan Domain .test)")
+        print("8. Repair Stack (Rebuild config + Restart)")
+        print("9. Status Container (ps)")
+        print("10. Setup Command Alias PHP (Docker CLI)")
+        print("11. Uninstall Stack")
         print("0. Keluar")
         print("------------------------------------------")
-        choice = input("Pilih menu [0-10]: ").strip()
+        choice = input("Pilih menu [0-11]: ").strip()
 
         if choice == "1":
             action_setup()
@@ -722,12 +836,14 @@ def show_menu():
         elif choice == "6":
             action_switch_php()
         elif choice == "7":
-            action_repair()
+            action_manage_projects()
         elif choice == "8":
-            subprocess.run(["docker", "compose", "ps"], cwd=BASE_DIR)
+            action_repair()
         elif choice == "9":
-            action_alias()
+            subprocess.run(["docker", "compose", "ps"], cwd=BASE_DIR)
         elif choice == "10":
+            action_alias()
+        elif choice == "11":
             action_uninstall()
         elif choice == "0":
             sys.exit(0)
@@ -747,6 +863,28 @@ if __name__ == "__main__":
             generate_nginx_configs()
             sync_hosts_file()
             reload_nginx()
+        elif arg in ["--enable", "enable"]:
+            if len(sys.argv) > 2:
+                proj = sys.argv[2]
+                set_project_enabled(proj, True)
+                generate_nginx_configs()
+                sync_hosts_file()
+                reload_nginx()
+                print(f"[OK] Project '{proj}' diaktifkan.")
+            else:
+                action_manage_projects()
+        elif arg in ["--disable", "disable"]:
+            if len(sys.argv) > 2:
+                proj = sys.argv[2]
+                set_project_enabled(proj, False)
+                generate_nginx_configs()
+                sync_hosts_file()
+                reload_nginx()
+                print(f"[OK] Project '{proj}' dinonaktifkan.")
+            else:
+                action_manage_projects()
+        elif arg in ["--projects", "projects", "--domain", "domain"]:
+            action_manage_projects()
         elif arg in ["--alias", "alias"]:
             action_alias()
         elif arg in ["--switch", "switch", "use"]:

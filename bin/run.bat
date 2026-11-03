@@ -63,6 +63,10 @@ if "%1"=="exec" goto cmd_exec
 if "%1"=="switch" goto cmd_switch
 if "%1"=="use" goto cmd_switch
 if "%1"=="alias" goto cmd_alias
+if "%1"=="enable" goto cmd_enable
+if "%1"=="disable" goto cmd_disable
+if "%1"=="domain" goto cmd_domain
+if "%1"=="projects" goto cmd_domain
 if "%1"=="php" goto cmd_php
 if "%1"=="composer" goto cmd_composer
 if "%1"=="mysql" goto cmd_mysql
@@ -116,6 +120,18 @@ goto end
 
 :cmd_alias
 %PY_CMD% bin\sync.py --alias
+goto end
+
+:cmd_enable
+%PY_CMD% bin\sync.py --enable %2
+goto end
+
+:cmd_disable
+%PY_CMD% bin\sync.py --disable %2
+goto end
+
+:cmd_domain
+%PY_CMD% bin\sync.py --domain
 goto end
 
 :cmd_php

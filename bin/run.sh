@@ -39,6 +39,17 @@ case "$CMD" in
         shift
         python3 bin/sync.py --switch "$@" || python bin/sync.py --switch "$@"
         ;;
+    enable)
+        shift
+        python3 bin/sync.py --enable "$@" || python bin/sync.py --enable "$@"
+        ;;
+    disable)
+        shift
+        python3 bin/sync.py --disable "$@" || python bin/sync.py --disable "$@"
+        ;;
+    domain|projects)
+        python3 bin/sync.py --domain || python bin/sync.py --domain
+        ;;
     alias)
         python3 bin/sync.py --alias || python bin/sync.py --alias
         ;;
@@ -84,6 +95,6 @@ case "$CMD" in
         python3 bin/sync.py || python bin/sync.py
         ;;
     *)
-        echo "Penggunaan: ./bin/run.sh [setup|up|down|restart|sync|switch|repair|uninstall|ps|exec|alias|php|composer|mysql|mysqldump]"
+        echo "Penggunaan: ./bin/run.sh [setup|up|down|restart|sync|switch|enable|disable|domain|repair|uninstall|ps|exec|alias|php|composer|mysql|mysqldump]"
         ;;
 esac

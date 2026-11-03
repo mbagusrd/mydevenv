@@ -57,17 +57,30 @@ projects/
 ```
 
 ### 3. Sinkronisasi Domain & Hosts
-Jalankan script sync interaktif (jalankan terminal dengan Administrator / sudo agar dapat update file `hosts`):
-```cmd
-python bin\sync.py
-```
-Pilih opsi **1** (Sync Total).
+Secara default, domain project (`<project>.test`) **tidak otomatis aktif** agar hosts & nginx tetap bersih.
+Domain utama stack (`php.test`, `php5.test`, `php7.test`, `php8.test`) tetap aktif di awal.
+
+Untuk mengaktifkan/menonaktifkan domain project secara manual:
+- **Menu interaktif**: jalankan `run` lalu pilih menu **7** (`Manage Project Domain`), atau:
+  ```cmd
+  bin\run.bat domain
+  ```
+- **CLI langsung**:
+  ```cmd
+  bin\run.bat enable <nama_project>
+  bin\run.bat disable <nama_project>
+  ```
+- **Sync ulang**:
+  ```cmd
+  bin\run.bat sync
+  ```
 
 ### 4. Akses URL di Browser
-Setiap project otomatis dapat diakses dengan ketiga versi PHP:
-- `http://demo.php5.test` -> jalan di PHP 5.6
-- `http://demo.php7.test` -> jalan di PHP 7.4
-- `http://demo.php8.test` -> jalan di PHP 8.2
+Project yang telah diaktifkan dapat diakses via:
+- `http://<project>.test` -> jalan di PHP default yang sedang dipilih
+- `http://<project>.php5.test` -> jalan di PHP 5.6
+- `http://<project>.php7.test` -> jalan di PHP 7.4
+- `http://<project>.php8.test` -> jalan di PHP 8.2 / 8.3 / 8.4
 
 Dashboard direktori root:
 - `http://php5.test`
