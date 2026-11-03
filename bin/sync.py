@@ -117,10 +117,11 @@ def generate_nginx_configs():
 
     # 1. Base dashboards for root domains (support both dir listing and php script execution)
     dash_conf = "# Dashboards for root domains\n"
-    # Default php.test and localhost fallback
-    dash_conf += f"""server {{
+    # Helper to generate server block for dashboard
+    def build_dashboard_server(server_name, fpm_pass):
+        return f"""server {{
     listen 80;
-    server_name php.test;
+    server_name {server_name};
     root /srv;
     index index.php index.html;
     autoindex on;
@@ -130,35 +131,14 @@ def generate_nginx_configs():
     }}
 
     location @subfolder {{
+        # 1. Nested subfolder with /public/ anywhere (e.g. /a/b/public/foo/bar)
+        rewrite ^(/.+/public)/?(.*)$ $1/index.php?$query_string last;
+
+        # 2. Subfolder directly under root
         rewrite ^/([^/]+)/?(.*)$ /$1/index.php?$query_string last;
     }}
 
-    location ~ \\.php(/|$) {{
-        fastcgi_split_path_info ^(.+\\.php)(/.+)$;
-        fastcgi_pass {default_fpm};
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        fastcgi_param PATH_INFO $fastcgi_path_info;
-        include fastcgi_params;
-    }}
-}}
-"""
-    for ver, (domain, fpm_pass, _) in PHP_STACKS.items():
-        dash_conf += f"""server {{
-    listen 80;
-    server_name {domain};
-    root /srv;
-    index index.php index.html;
-    autoindex on;
-
-    location / {{
-        try_files $uri $uri/ @subfolder;
-    }}
-
-    location @subfolder {{
-        rewrite ^/([^/]+)/?(.*)$ /$1/index.php?$query_string last;
-    }}
-
+    # Handle fastcgi for any .php inside nested folders (including /public/)
     location ~ \\.php(/|$) {{
         fastcgi_split_path_info ^(.+\\.php)(/.+)$;
         fastcgi_pass {fpm_pass};
@@ -169,6 +149,11 @@ def generate_nginx_configs():
     }}
 }}
 """
+
+    dash_conf += build_dashboard_server("php.test", default_fpm)
+    for ver, (domain, fpm_pass, _) in PHP_STACKS.items():
+        dash_conf += build_dashboard_server(domain, fpm_pass)
+
     (VHOST_DIR / "00-dashboards.conf").write_text(dash_conf, encoding="utf-8")
 
     # 2. Vhost per enabled project
