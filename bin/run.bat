@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 cd /d "%~dp0\.."
 
 :: 1. Deteksi executable Python yang valid (hindari WindowsApps alias)
