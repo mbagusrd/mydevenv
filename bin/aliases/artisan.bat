@@ -9,8 +9,10 @@ set "CURR=%CD%"
 
 if /i "%CURR:~0,41%"=="%HOST_DIR%" (
     set "REL=%CURR:~41%"
-    set "REL=!REL:\=/!"
-    set "WORKDIR=/srv!REL!"
+    if defined REL (
+        set "REL=!REL:\=/!"
+        set "WORKDIR=/srv!REL!"
+    )
 )
 
 docker compose -f "%COMPOSE_FILE%" exec -w "!WORKDIR!" %SERVICE% php artisan %*
