@@ -54,6 +54,10 @@ if not defined PY_CMD (
 if "%1"=="up" goto cmd_up
 if "%1"=="down" goto cmd_down
 if "%1"=="restart" goto cmd_restart
+if "%1"=="container" goto cmd_container
+if "%1"=="containers" goto cmd_container
+if "%1"=="start" goto cmd_start
+if "%1"=="stop" goto cmd_stop
 if "%1"=="sync" goto cmd_sync
 if "%1"=="setup" goto cmd_setup
 if "%1"=="repair" goto cmd_repair
@@ -77,8 +81,20 @@ if "%1"=="mysqldump" goto cmd_mysqldump
 goto end
 
 :cmd_up
-docker compose up -d
+%PY_CMD% bin\sync.py --up-custom
 %PY_CMD% bin\sync.py --auto
+goto end
+
+:cmd_container
+%PY_CMD% bin\sync.py --container %2
+goto end
+
+:cmd_start
+%PY_CMD% bin\sync.py --start %2
+goto end
+
+:cmd_stop
+%PY_CMD% bin\sync.py --stop %2
 goto end
 
 :cmd_down

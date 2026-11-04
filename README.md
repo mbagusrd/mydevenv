@@ -30,8 +30,10 @@ mydevenv/
 - PHP 7.4 FPM: Internal `php74:9000`
 - PHP 8.2 FPM: Internal `php82:9000`
 - MariaDB: Port `3306` (User: `root`, Pass: `root`)
-- PostgreSQL: Port `5432` (User: `root`, Pass: `root`)
-- MongoDB: Port `27017`
+- PostgreSQL (Opsional): Port `5432` (User: `root`, Pass: `root`)
+- MongoDB (Opsional): Port `27017`
+
+> **Catatan**: PostgreSQL dan MongoDB default berstatus nonaktif (menggunakan Docker Compose profile `postgres` & `mongo`) agar hemat RAM dan CPU. Aktifkan sesuai kebutuhan.
 
 ## Cara Penggunaan
 
@@ -47,7 +49,24 @@ chmod +x bin/run.sh
 ./bin/run.sh up
 ```
 
-### 2. Menambah Project Baru
+### 2. Mengelola Custom Container (PostgreSQL & MongoDB)
+Secara default `postgres` dan `mongo` tidak dijalankan saat `up`.
+
+Untuk mengaktifkan/menonaktifkan container:
+- **Menu interaktif**: jalankan `run` lalu pilih menu **8** (`Manage Custom Containers`), atau:
+  ```cmd
+  bin\run.bat container
+  ```
+- **CLI langsung**:
+  ```cmd
+  bin\run.bat start postgres
+  bin\run.bat stop postgres
+  bin\run.bat start mongo
+  bin\run.bat stop mongo
+  ```
+Status container yang diaktifkan tersimpan di `config/settings.json` (`enabled_containers`) sehingga otomatis ikut dijalankan saat `bin\run.bat up`.
+
+### 3. Menambah Project Baru
 Buat subfolder di dalam `projects/`:
 ```text
 projects/
@@ -56,7 +75,7 @@ projects/
 └── app-laravel/ (dengan folder public/)
 ```
 
-### 3. Sinkronisasi Domain & Hosts
+### 4. Sinkronisasi Domain & Hosts
 Secara default, domain project (`<project>.test`) **tidak otomatis aktif** agar hosts & nginx tetap bersih.
 Domain utama stack (`php.test`, `php5.test`, `php7.test`, `php8.test`) tetap aktif di awal.
 
@@ -75,7 +94,7 @@ Untuk mengaktifkan/menonaktifkan domain project secara manual:
   bin\run.bat sync
   ```
 
-### 4. Akses URL di Browser
+### 5. Akses URL di Browser
 Project yang telah diaktifkan dapat diakses via:
 - `http://<project>.test` -> jalan di PHP default yang sedang dipilih
 - `http://<project>.php5.test` -> jalan di PHP 5.6
@@ -87,7 +106,7 @@ Dashboard direktori root:
 - `http://php7.test`
 - `http://php8.test`
 
-### 5. Menjalankan Command PHP dari Docker (Alias CLI)
+### 6. Menjalankan Command PHP dari Docker (Alias CLI)
 Disediakan menu setup alias agar dapat menjalankan PHP & Composer container langsung dari terminal host:
 
 ```cmd

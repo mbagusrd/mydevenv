@@ -100,6 +100,10 @@ services:
     image: postgres:15-alpine
     container_name: mydevenv_postgres
     restart: unless-stopped
+    profiles:
+      - postgres
+      - db
+      - extra
     ports:
       - "5432:5432"
     environment:
@@ -114,6 +118,10 @@ services:
     image: mongo:6.0
     container_name: mydevenv_mongo
     restart: unless-stopped
+    profiles:
+      - mongo
+      - db
+      - extra
     ports:
       - "27017:27017"
     volumes:

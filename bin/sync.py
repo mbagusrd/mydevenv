@@ -77,6 +77,34 @@ def get_enabled_projects():
         return set(enabled)
     return set()
 
+ALL_CUSTOM_CONTAINERS = ["postgres", "mongo"]
+
+def get_enabled_containers():
+    data = get_settings()
+    enabled = data.get("enabled_containers", [])
+    if isinstance(enabled, list):
+        return set(enabled)
+    return set()
+
+def set_container_enabled(service_name, enabled=True):
+    data = get_settings()
+    current = set(data.get("enabled_containers", []))
+    if enabled:
+        current.add(service_name)
+    else:
+        current.discard(service_name)
+    data["enabled_containers"] = sorted(list(current))
+    save_settings(data)
+
+def get_docker_compose_up_cmd():
+    enabled = get_enabled_containers()
+    cmd = ["docker", "compose"]
+    for svc in enabled:
+        if svc in ALL_CUSTOM_CONTAINERS:
+            cmd.extend(["--profile", svc])
+    cmd.extend(["up", "-d"])
+    return cmd
+
 def set_project_enabled(project_name, enabled=True):
     data = get_settings()
     current = set(data.get("enabled_projects", []))
@@ -344,7 +372,7 @@ def action_setup():
     print("\n[SELESAI] Setup berhasil disiapkan.")
     ask_start = input("Jalankan stack container sekarang? [Y/n]: ").strip().lower()
     if ask_start in ["", "y", "yes"]:
-        subprocess.run(["docker", "compose", "up", "-d"], cwd=BASE_DIR)
+        subprocess.run(get_docker_compose_up_cmd(), cwd=BASE_DIR)
         reload_nginx()
         list_urls()
     return True
@@ -778,13 +806,61 @@ def action_manage_projects():
         else:
             print("Pilihan tidak valid.")
 
+def action_manage_containers():
+    while True:
+        enabled_set = get_enabled_containers()
+        print("\n==========================================")
+        print("         MANAGE CUSTOM CONTAINERS         ")
+        print("==========================================")
+        print("Pilih nomor container untuk toggle AKTIF / NONAKTIF:")
+        for idx, svc in enumerate(ALL_CUSTOM_CONTAINERS, 1):
+            status = "[AKTIF]    " if svc in enabled_set else "[NONAKTIF] "
+            print(f" {idx:2d}. {status} {svc}")
+        print("------------------------------------------")
+        print(" A. Aktifkan SEMUA container opsional")
+        print(" D. Nonaktifkan SEMUA container opsional")
+        print(" 0. Simpan & Kembali")
+        print("------------------------------------------")
+        choice = input("Pilih menu/nomor container: ").strip()
+
+        if choice == "0":
+            break
+        elif choice.lower() == "a":
+            for svc in ALL_CUSTOM_CONTAINERS:
+                set_container_enabled(svc, True)
+                subprocess.run(["docker", "compose", "--profile", svc, "up", "-d", svc], cwd=BASE_DIR)
+            print("[OK] Semua container opsional diaktifkan dan dijalankan.")
+        elif choice.lower() == "d":
+            for svc in ALL_CUSTOM_CONTAINERS:
+                set_container_enabled(svc, False)
+                subprocess.run(["docker", "compose", "stop", svc], cwd=BASE_DIR)
+            print("[OK] Semua container opsional dinonaktifkan dan dihentikan.")
+        elif choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(ALL_CUSTOM_CONTAINERS):
+                target_svc = ALL_CUSTOM_CONTAINERS[idx - 1]
+                new_state = target_svc not in enabled_set
+                set_container_enabled(target_svc, new_state)
+                if new_state:
+                    subprocess.run(["docker", "compose", "--profile", target_svc, "up", "-d", target_svc], cwd=BASE_DIR)
+                    print(f"[OK] Container '{target_svc}' berhasil diaktifkan dan dijalankan.")
+                else:
+                    subprocess.run(["docker", "compose", "stop", target_svc], cwd=BASE_DIR)
+                    print(f"[OK] Container '{target_svc}' berhasil dinonaktifkan dan dihentikan.")
+            else:
+                print("Nomor container tidak valid.")
+        else:
+            print("Pilihan tidak valid.")
+
 def show_menu():
     while True:
         curr_ver = get_current_php_version()
         enabled_count = len([p for p in scan_projects() if p in get_enabled_projects()])
+        enabled_containers_count = len(get_enabled_containers())
         print("\n==========================================")
         print(f"  MYDEVENV STACK CONTROL [PHP: {curr_ver}]")
-        print(f"  Project Domain Aktif: {enabled_count} project")
+        print(f"  Project Domain Aktif   : {enabled_count} project")
+        print(f"  Container Opsional     : {enabled_containers_count}/{len(ALL_CUSTOM_CONTAINERS)} aktif")
         print("==========================================")
         print("1. Setup Baru (Inisialisasi + Pull + Sync)")
         print("2. Start Stack (up)")
@@ -793,18 +869,19 @@ def show_menu():
         print("5. Sync Domain & Hosts")
         print("6. Switch Versi PHP (CLI & FPM Default)")
         print("7. Manage Project Domain (Aktifkan / Matikan Domain .test)")
-        print("8. Repair Stack (Rebuild config + Restart)")
-        print("9. Status Container (ps)")
-        print("10. Setup Command Alias PHP (Docker CLI)")
-        print("11. Uninstall Stack")
+        print("8. Manage Custom Containers (Aktifkan / Matikan Postgres, Mongo)")
+        print("9. Repair Stack (Rebuild config + Restart)")
+        print("10. Status Container (ps)")
+        print("11. Setup Command Alias PHP (Docker CLI)")
+        print("12. Uninstall Stack")
         print("0. Keluar")
         print("------------------------------------------")
-        choice = input("Pilih menu [0-11]: ").strip()
+        choice = input("Pilih menu [0-12]: ").strip()
 
         if choice == "1":
             action_setup()
         elif choice == "2":
-            subprocess.run(["docker", "compose", "up", "-d"], cwd=BASE_DIR)
+            subprocess.run(get_docker_compose_up_cmd(), cwd=BASE_DIR)
             generate_nginx_configs()
             sync_hosts_file()
             reload_nginx()
@@ -823,12 +900,14 @@ def show_menu():
         elif choice == "7":
             action_manage_projects()
         elif choice == "8":
-            action_repair()
+            action_manage_containers()
         elif choice == "9":
-            subprocess.run(["docker", "compose", "ps"], cwd=BASE_DIR)
+            action_repair()
         elif choice == "10":
-            action_alias()
+            subprocess.run(["docker", "compose", "ps"], cwd=BASE_DIR)
         elif choice == "11":
+            action_alias()
+        elif choice == "12":
             action_uninstall()
         elif choice == "0":
             sys.exit(0)
@@ -870,6 +949,32 @@ if __name__ == "__main__":
                 action_manage_projects()
         elif arg in ["--projects", "projects", "--domain", "domain"]:
             action_manage_projects()
+        elif arg in ["--container", "container", "--containers", "containers"]:
+            action_manage_containers()
+        elif arg in ["--start-container", "start-container", "--start", "start"]:
+            if len(sys.argv) > 2:
+                svc = sys.argv[2].lower()
+                if svc in ALL_CUSTOM_CONTAINERS:
+                    set_container_enabled(svc, True)
+                    subprocess.run(["docker", "compose", "--profile", svc, "up", "-d", svc], cwd=BASE_DIR)
+                    print(f"[OK] Container '{svc}' diaktifkan dan dijalankan.")
+                else:
+                    print(f"[ERROR] Container '{svc}' tidak dikenal. Pilihan: {', '.join(ALL_CUSTOM_CONTAINERS)}")
+            else:
+                action_manage_containers()
+        elif arg in ["--stop-container", "stop-container", "--stop", "stop"]:
+            if len(sys.argv) > 2:
+                svc = sys.argv[2].lower()
+                if svc in ALL_CUSTOM_CONTAINERS:
+                    set_container_enabled(svc, False)
+                    subprocess.run(["docker", "compose", "stop", svc], cwd=BASE_DIR)
+                    print(f"[OK] Container '{svc}' dinonaktifkan dan dihentikan.")
+                else:
+                    print(f"[ERROR] Container '{svc}' tidak dikenal. Pilihan: {', '.join(ALL_CUSTOM_CONTAINERS)}")
+            else:
+                action_manage_containers()
+        elif arg in ["--up-custom", "up-custom"]:
+            subprocess.run(get_docker_compose_up_cmd(), cwd=BASE_DIR)
         elif arg in ["--alias", "alias"]:
             action_alias()
         elif arg in ["--switch", "switch", "use"]:

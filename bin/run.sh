@@ -7,7 +7,7 @@ CMD="${1:-menu}"
 
 case "$CMD" in
     up)
-        docker compose up -d
+        python3 bin/sync.py --up-custom || python bin/sync.py --up-custom
         python3 bin/sync.py --auto || python bin/sync.py --auto
         ;;
     down)
@@ -15,6 +15,18 @@ case "$CMD" in
         ;;
     restart)
         docker compose restart
+        ;;
+    container|containers)
+        shift
+        python3 bin/sync.py --container "$@" || python bin/sync.py --container "$@"
+        ;;
+    start)
+        shift
+        python3 bin/sync.py --start-container "$@" || python bin/sync.py --start-container "$@"
+        ;;
+    stop)
+        shift
+        python3 bin/sync.py --stop-container "$@" || python bin/sync.py --stop-container "$@"
         ;;
     sync)
         python3 bin/sync.py --sync || python bin/sync.py --sync
@@ -95,6 +107,6 @@ case "$CMD" in
         python3 bin/sync.py || python bin/sync.py
         ;;
     *)
-        echo "Penggunaan: ./bin/run.sh [setup|up|down|restart|sync|switch|enable|disable|domain|repair|uninstall|ps|exec|alias|php|composer|mysql|mysqldump]"
+        echo "Penggunaan: ./bin/run.sh [setup|up|down|restart|container|start|stop|sync|switch|enable|disable|domain|repair|uninstall|ps|exec|alias|php|composer|mysql|mysqldump]"
         ;;
 esac
