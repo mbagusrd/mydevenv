@@ -523,8 +523,10 @@ def generate_alias_scripts():
             'set "CURR=%CD%"\n\n'
             f'if /i "%CURR:~0,{host_len}%"=="%HOST_DIR%" (\n'
             f'    set "REL=%CURR:~{host_len}%"\n'
-            '    set "REL=' + '!REL:\\=/!' + '"\n'
-            '    set "WORKDIR=/srv!REL!"\n'
+            '    if defined REL (\n'
+            '        set "REL=' + '!REL:\\=/!' + '"\n'
+            '        set "WORKDIR=/srv!REL!"\n'
+            '    )\n'
             ")\n\n"
             f'docker compose -f "%COMPOSE_FILE%" exec -w "!WORKDIR!" %SERVICE% {exe} %*\n'
             "exit /b %errorlevel%\n"
